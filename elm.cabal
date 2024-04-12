@@ -229,6 +229,7 @@ Executable elm
         snap-server,
         template-haskell,
         time,
+        tls <= 1.9.0,
         unordered-containers,
         utf8-string,
         vector,
