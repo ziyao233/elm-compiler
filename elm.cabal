@@ -220,6 +220,7 @@ Executable elm
         language-glsl,
         mtl,
         network,
+        network-uri,
         parsec,
         process,
         raw-strings-qq,

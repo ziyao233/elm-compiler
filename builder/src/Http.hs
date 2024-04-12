@@ -31,6 +31,7 @@ import qualified Data.ByteString.Builder as B
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.Digest.Pure.SHA as SHA
 import qualified Data.String as String
+import Data.Tuple (uncurry)
 import Network.HTTP (urlEncodeVars)
 import Network.HTTP.Client
 import Network.HTTP.Client.TLS (tlsManagerSettings)
@@ -38,6 +39,8 @@ import Network.HTTP.Types.Header (Header, hAccept, hAcceptEncoding, hUserAgent)
 import Network.HTTP.Types.Method (Method, methodGet, methodPost)
 import qualified Network.HTTP.Client as Multi (RequestBody(RequestBodyLBS))
 import qualified Network.HTTP.Client.MultipartFormData as Multi
+import qualified Network.HTTP.Proxy as Proxy
+import qualified Network.URI as URI
 
 import qualified Json.Encode as Encode
 import qualified Elm.Version as V
@@ -76,6 +79,19 @@ post :: Manager -> String -> [Header] -> (Error -> e) -> (BS.ByteString -> IO (E
 post =
   fetch methodPost
 
+parseProxyURI :: String -> Maybe (BS.ByteString, Int)
+parseProxyURI s = do
+  u <- URI.parseURI $ "http://" ++ s
+  a <- URI.uriAuthority u
+  return (BS.pack $ URI.uriRegName a, read $ tail $ URI.uriPort a)
+
+setupProxy :: Request -> IO Request
+setupProxy r = do
+  p <- Proxy.fetchProxy True
+  return $ case p of
+    Proxy.NoProxy -> r
+    Proxy.Proxy s _ -> maybe r (set r) $ parseProxyURI s
+  where set r (addr, port) = r { proxy = Just $ Proxy addr port }
 
 fetch :: Method -> Manager -> String -> [Header] -> (Error -> e) -> (BS.ByteString -> IO (Either e a)) -> IO (Either e a)
 fetch methodVerb manager url headers onError onSuccess =
@@ -87,7 +103,8 @@ fetch methodVerb manager url headers onError onSuccess =
               { method = methodVerb
               , requestHeaders = addDefaultHeaders headers
               }
-      withResponse req1 manager $ \response ->
+      req2 <- setupProxy req1
+      withResponse req2 manager $ \response ->
         do  chunks <- brConsume (responseBody response)
             onSuccess (BS.concat chunks)
 
@@ -165,7 +182,8 @@ getArchive manager url onError err onSuccess =
               { method = methodGet
               , requestHeaders = addDefaultHeaders []
               }
-      withResponse req1 manager $ \response ->
+      req2 <- setupProxy req1
+      withResponse req2 manager $ \response ->
         do  result <- readArchive (responseBody response)
             case result of
               Nothing -> return (Left err)
@@ -221,7 +239,8 @@ upload manager url parts =
             , requestHeaders = addDefaultHeaders []
             , responseTimeout = responseTimeoutNone
             }
-      withResponse req1 manager $ \_ ->
+      req2 <- setupProxy req1
+      withResponse req2 manager $ \_ ->
         return (Right ())
 
 
